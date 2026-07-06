@@ -23,7 +23,7 @@
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>tf2_msgs</exec_depend>
   <exec_depend>xacro</exec_depend>
-  <exec_depend>yahboomcar_description</exec_depend>
+  <exec_depend>robot_description</exec_depend>
 
   <test_depend>python3-pytest</test_depend>
 

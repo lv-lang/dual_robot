@@ -76,9 +76,9 @@ def generate_launch_description():
         parameters=[imu_filter_config]
     )
 
-    yahboom_joy_node = Node(
+    robot_joy_node = Node(
         package='mecanum_ctrl',
-        executable='yahboom_joy_R2',
+        executable='mecanum_joy_R2',
     )
     joy_node = Node(
         package='joy',
@@ -95,6 +95,6 @@ def generate_launch_description():
         #rviz_node,
         driver_node,
         imu_filter_node,
-        # yahboom_joy_node,
+        # robot_joy_node,
         # joy_node
     ])

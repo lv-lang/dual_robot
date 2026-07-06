@@ -21,7 +21,7 @@ from launch_ros.substitutions import FindPackageShare
 
 def generate_launch_description():
     gazebo_ros_share = get_package_share_directory('gazebo_ros')
-    description_share = get_package_share_directory('yahboomcar_description')
+    description_share = get_package_share_directory('robot_description')
     gazebo_model_path = os.pathsep.join(
         path for path in [
             os.path.dirname(description_share),

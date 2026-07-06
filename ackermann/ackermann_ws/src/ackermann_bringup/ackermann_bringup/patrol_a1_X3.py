@@ -24,7 +24,7 @@ print("import finish")
 
 RAD2DEG = 180 / math.pi
 
-class YahboomCarPatrol(Node):
+class RobotPatrol(Node):
     def __init__(self,name):
         super().__init__(name)
         self.moving = True
@@ -466,7 +466,7 @@ class YahboomCarPatrol(Node):
     
 def main():
     rclpy.init()
-    class_patrol = YahboomCarPatrol("YahboomCarPatrol")
+    class_patrol = RobotPatrol("RobotPatrol")
     print("create done")
     try:
         rclpy.spin(class_patrol)

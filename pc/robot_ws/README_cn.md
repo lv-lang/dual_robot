@@ -28,7 +28,6 @@ src/robot_web/              App 后端网关
 src/robot_tools/            调试、验证和演示工具
 src/robot_vision_bpu/       视觉检测节点接口
 src/robot_gazebo/           Gazebo 仿真模型与辅助节点
-src/yahboomcar_*            底盘、导航和 RViz 相关适配包
 ```
 
 ## 环境要求
@@ -104,4 +103,3 @@ cd apps/robot-control-pwa
 npm run test
 npm run build
 ```
-

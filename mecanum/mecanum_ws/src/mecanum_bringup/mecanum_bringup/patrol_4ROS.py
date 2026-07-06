@@ -22,7 +22,7 @@ from time import sleep
 
 print("import finish")
 
-class YahboomCarPatrol(Node):
+class RobotPatrol(Node):
     def __init__(self,name):
         super().__init__(name)
         self.moving = True
@@ -318,6 +318,6 @@ class YahboomCarPatrol(Node):
     
 def main():
     rclpy.init()
-    class_patrol = YahboomCarPatrol("YahboomCarPatrol")
+    class_patrol = RobotPatrol("RobotPatrol")
     print("create done")
     rclpy.spin(class_patrol)

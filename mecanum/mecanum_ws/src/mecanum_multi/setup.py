@@ -29,8 +29,8 @@ setup(
         'console_scripts': [
         'queue = mecanum_multi.queue:main',
         'listenline = mecanum_multi.listenline:main',
-        'mecanum_X3_ctrl = mecanum_multi.yahboom_X3_joy:main',
-        'mecanum_R2_ctrl = mecanum_multi.yahboom_R2_joy:main'
+        'mecanum_X3_ctrl = mecanum_multi.mecanum_X3_joy:main',
+        'mecanum_R2_ctrl = mecanum_multi.mecanum_R2_joy:main'
         ],
     },
 )

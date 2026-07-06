@@ -28,7 +28,6 @@ src/robot_web/              App backend gateway
 src/robot_tools/            Debugging, validation, and demo tools
 src/robot_vision_bpu/       Vision detection node interface
 src/robot_gazebo/           Gazebo simulation models and helper nodes
-src/yahboomcar_*            Chassis, navigation, and RViz adaptation packages
 ```
 
 ## Requirements
@@ -104,4 +103,3 @@ cd apps/robot-control-pwa
 npm run test
 npm run build
 ```
-

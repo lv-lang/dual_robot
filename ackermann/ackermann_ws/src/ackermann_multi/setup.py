@@ -29,8 +29,8 @@ setup(
         'console_scripts': [
         'queue = ackermann_multi.queue:main',
         'listenline = ackermann_multi.listenline:main',
-        'ackermann_X3_ctrl = ackermann_multi.yahboom_X3_joy:main',
-        'ackermann_R2_ctrl = ackermann_multi.yahboom_R2_joy:main'
+        'ackermann_X3_ctrl = ackermann_multi.ackermann_X3_joy:main',
+        'ackermann_R2_ctrl = ackermann_multi.ackermann_R2_joy:main'
         ],
     },
 )

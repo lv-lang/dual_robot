@@ -76,9 +76,9 @@ def generate_launch_description():
         parameters=[imu_filter_config]
     )
 
-    yahboom_joy_node = Node(
-        package='ackermann_ctrl',
-        executable='yahboom_joy_R2',
+    robot_joy_node = Node(
+        package='ackermann_multi',
+        executable='ackermann_R2_ctrl',
     )
     joy_node = Node(
         package='joy',
@@ -95,6 +95,6 @@ def generate_launch_description():
         #rviz_node,
         driver_node,
         imu_filter_node,
-        yahboom_joy_node,
+        robot_joy_node,
         joy_node
     ])

@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <robot name="robot1_mecanum_gazebo" xmlns:xacro="http://www.ros.org/wiki/xacro">
-  <xacro:include filename="$(find yahboomcar_description)/urdf/yahboomcar_X3_robot1.urdf"/>
+  <xacro:include filename="$(find robot_description)/urdf/mecanum_X3_robot1.urdf"/>
 
   <xacro:macro name="kinematic_link" params="link_name">
     <gazebo reference="${link_name}">

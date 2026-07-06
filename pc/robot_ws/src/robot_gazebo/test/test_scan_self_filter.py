@@ -97,7 +97,7 @@ def test_robot2_gazebo_wrapper_enables_lidar_but_not_camera_runtime():
     ).read_text(encoding='utf-8')
     active_text = re.sub(r'<!--.*?-->', '', text, flags=re.DOTALL)
 
-    assert 'yahboomcar_R2_robot2.urdf.xacro' in text
+    assert 'ackermann_R2_robot2.urdf.xacro' in text
     assert '<kinematic>true</kinematic>' in active_text
     assert '<sensor name="robot2_laser" type="ray">' in active_text
     assert '<namespace>/robot2</namespace>' in active_text
@@ -115,7 +115,7 @@ def test_robot1_lidar_only_wrapper_avoids_headless_camera_plugins():
         / 'robot1_mecanum_gazebo_lidar_only.urdf.xacro'
     ).read_text(encoding='utf-8')
 
-    assert 'yahboomcar_X3_robot1.urdf' in text
+    assert 'mecanum_X3_robot1.urdf' in text
     assert '<kinematic>true</kinematic>' not in text
     assert '<sensor name="robot1_laser" type="ray">' in text
     assert '<namespace>/robot1</namespace>' in text

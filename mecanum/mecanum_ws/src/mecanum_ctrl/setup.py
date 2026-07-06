@@ -24,9 +24,9 @@ setup(
     },
     entry_points={
         'console_scripts': [
-        'yahboom_joy_X3	= mecanum_ctrl.yahboom_joy_X3:main',
-        'yahboom_keyboard	= mecanum_ctrl.yahboom_keyboard:main',
-        'yahboom_joy_R2	= mecanum_ctrl.yahboom_joy_R2:main',
+        'mecanum_joy_X3	= mecanum_ctrl.mecanum_joy_X3:main',
+        'mecanum_keyboard	= mecanum_ctrl.mecanum_keyboard:main',
+        'mecanum_joy_R2	= mecanum_ctrl.mecanum_joy_R2:main',
         ],
     },
 )

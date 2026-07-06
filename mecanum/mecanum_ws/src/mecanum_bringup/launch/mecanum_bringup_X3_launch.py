@@ -128,9 +128,9 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('use_ekf')),
     )
 
-    yahboom_joy_node = Node(
+    robot_joy_node = Node(
         package='mecanum_ctrl',
-        executable='yahboom_joy_X3',
+        executable='mecanum_joy_X3',
     )
     joy_node = Node(
         package='joy',
@@ -154,6 +154,6 @@ def generate_launch_description():
         base_node,
         imu_filter_node,
         ekf_node,
-        # yahboom_joy_node,
+        # robot_joy_node,
         # joy_node
     ])
