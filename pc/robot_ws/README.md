@@ -1,6 +1,6 @@
-# Dual-Robot Delivery and Inspection System
+# RDK X5-Based Heterogeneous Ackermann-Mecanum Dual-Robot Cooperative Dispatch and Perception System
 
-This project is a ROS 2 Humble based heterogeneous dual-robot delivery and inspection system for indoor competition demos and real-robot deployment. It includes a mecanum delivery robot, an ackermann inspection robot, a PC-side dispatch control plane, a Web App operator interface, map visualization, task dispatching, event logs, and interfaces for vision detection results.
+This project is an RDK X5-based ROS 2 Humble heterogeneous Ackermann-Mecanum dual-robot cooperative dispatch and perception system for indoor competition demos and real-robot deployment. It includes a mecanum delivery robot, an ackermann inspection robot, a PC-side dispatch control plane, a Web App operator interface, map visualization, task dispatching, event logs, and interfaces for vision detection results.
 
 Chinese documentation: [README_cn.md](README_cn.md)
 

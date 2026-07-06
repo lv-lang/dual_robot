@@ -1,6 +1,6 @@
-# Dual-Robot Competition Source Repository
+# RDK X5-Based Heterogeneous Ackermann-Mecanum Dual-Robot Cooperative Dispatch and Perception System
 
-This repository contains the source code for the three runtime sides of a ROS 2 Humble heterogeneous dual-robot delivery and inspection system:
+This repository contains the source code for an RDK X5-based heterogeneous Ackermann-Mecanum dual-robot cooperative dispatch and perception system. The system is organized into three runtime workspaces:
 
 - PC dispatch and Web App workspace
 - mecanum robot controller workspace
@@ -86,4 +86,3 @@ source install/setup.bash
 ## Notes
 
 This repository is intended as a source release. It does not include `build/`, `install/`, `log/`, `node_modules/`, generated frontend `dist/`, rosbag data, local archives, or machine-specific caches.
-
