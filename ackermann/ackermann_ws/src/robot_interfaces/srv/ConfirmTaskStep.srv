@@ -1,0 +1,16 @@
+uint8 RESULT_OK=1
+uint8 RESULT_ABNORMAL=2
+uint8 RESULT_REJECT=3
+
+string task_id
+string requester
+uint32 step_index
+string step_id
+string point_id
+uint8 result
+string note
+---
+bool accepted
+Task task
+string derived_task_id
+string message

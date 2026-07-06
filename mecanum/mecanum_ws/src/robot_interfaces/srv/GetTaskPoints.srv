@@ -1,0 +1,6 @@
+# Query all fixed and runtime task points known by robot_dispatch.
+
+string requester
+---
+TaskPoint[] points
+string message

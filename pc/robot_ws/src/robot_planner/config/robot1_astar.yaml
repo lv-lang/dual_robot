@@ -1,0 +1,32 @@
+/robot1/astar_global_planner:
+  ros__parameters:
+    map_topic: /robot1/map
+    odom_topic: /robot1/odom
+    goal_pose_topic: /robot1/goal_pose
+    global_path_topic: /robot1/global_path
+    planner_state_topic: /robot1/planner_state
+
+    allow_diagonal: true
+    occupied_threshold: 65
+    unknown_as_obstacle: false
+    robot_radius: 0.16
+    inflation_radius: 0.20
+    snap_start_to_free_radius: 0.30
+    snap_goal_to_free_radius: 0.80
+    planning_timeout: 1.0
+    max_iterations: 200000
+    clearance_cost_weight: 1.0
+    densify_spacing: 0.08
+    simplify_path: true
+    publish_empty_path_on_failure: true
+    map_aligned_odom_frames:
+      - robot1/odom
+
+    simple_test_map: false
+    simple_test_map_width: 80
+    simple_test_map_height: 60
+    simple_test_map_resolution: 0.10
+    simple_test_map_frame_id: map
+    simple_test_map_origin_x: -4.0
+    simple_test_map_origin_y: -3.0
+    simple_test_map_add_obstacles: true

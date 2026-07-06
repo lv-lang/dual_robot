@@ -1,0 +1,9 @@
+<launch>
+	<arg name="robot_name" default="ackermann"/>
+	<include file="$(find-pkg-share ackermann_multi)/launch/ackermann_base_bringup.launch.xml">
+		<arg name="robot_name" value="$(var robot_name)"/>
+	</include>
+	<include file="$(find-pkg-share ackermann_multi)/launch/ackermann_a1_lidar.launch.xml">
+		<arg name="robot_name" value="$(var robot_name)"/>
+	</include>
+</launch>

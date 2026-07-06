@@ -1,0 +1,11 @@
+# Add a runtime task point. Current Gazebo validation supports pickup,
+# delivery, and inspection points in the shared map frame.
+
+string requester
+uint8 kind
+string label
+geometry_msgs/PoseStamped pose
+---
+bool accepted
+TaskPoint point
+string message

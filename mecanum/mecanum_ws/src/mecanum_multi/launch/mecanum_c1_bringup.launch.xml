@@ -1,0 +1,9 @@
+<launch>
+	<arg name="robot_name" default="mecanum"/>
+	<include file="$(find-pkg-share mecanum_multi)/launch/mecanum_base_bringup.launch.xml">
+		<arg name="robot_name" value="$(var robot_name)"/>
+	</include>
+	<include file="$(find-pkg-share mecanum_multi)/launch/mecanum_c1_lidar.launch.xml">
+		<arg name="robot_name" value="$(var robot_name)"/>
+	</include>
+</launch>

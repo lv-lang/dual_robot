@@ -1,0 +1,13 @@
+templates:
+  - template_id: builtin_delivery_demo
+    display_name: 配送演示
+    task_type: DELIVERY
+    target_point_ids: [PICKUP_A, DELIVERY_C]
+    robot_preference: auto
+    sort_order: 10
+  - template_id: builtin_inspection_demo
+    display_name: 巡检演示
+    task_type: INSPECTION
+    target_point_ids: [P1, P2, P3]
+    robot_preference: auto
+    sort_order: 20

@@ -1,0 +1,8 @@
+bool active
+string requester
+string reason
+---
+bool accepted
+RobotState[] robot_states
+Task[] affected_tasks
+string message

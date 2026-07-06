@@ -1,0 +1,9 @@
+cameras:
+  - robot_id: mecanum
+    label: mecanum车检测画面
+    stream_url: "http://172.20.10.12:8088/stream.mjpg"
+    kind: mjpeg
+  - robot_id: ackermann
+    label: ackermann车检测画面
+    stream_url: "http://172.20.10.13:8088/stream.mjpg"
+    kind: mjpeg

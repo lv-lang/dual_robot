@@ -1,0 +1,86 @@
+map_version: lv_home_v1
+frame_id: map
+
+points:
+  W1:
+    kind: waiting_area
+    label: mecanum 等待区
+    x: 6.286083
+    y: 0.207326
+    yaw: -3.133005
+
+  W2:
+    kind: waiting_area
+    label: ackermann 等待区
+    x: 6.580443
+    y: 3.885523
+    yaw: 3.076532
+
+  PICKUP_A:
+    kind: pickup
+    label: A 取货点
+    x: 4.121747
+    y: 5.164713
+    yaw: 1.570796
+
+  PICKUP_B:
+    kind: pickup
+    label: B 取货点
+    x: -1.075252
+    y: 6.646297
+    yaw: 1.570796
+
+  DELIVERY_C:
+    kind: delivery
+    label: C 配送点
+    x: 3.843464
+    y: -1.703599
+    yaw: -1.570796
+
+  DELIVERY_D:
+    kind: delivery
+    label: D 配送点
+    x: -1.556718
+    y: -0.658804
+    yaw: -1.570796
+
+  P1:
+    kind: inspection
+    label: P1 巡检点
+    x: -2.544384
+    y: 1.405158
+    yaw: -1.570796
+
+  P2:
+    kind: inspection
+    label: P2 巡检点
+    x: -2.376889
+    y: 5.675577
+    yaw: 1.570796
+
+  P3:
+    kind: inspection
+    label: P3 巡检点
+    x: 3.230518
+    y: 5.293748
+    yaw: 1.570796
+
+  P4:
+    kind: inspection
+    label: P4 巡检点
+    x: 3.110974
+    y: -1.073836
+    yaw: -1.570796
+
+robots:
+  mecanum:
+    waiting_area: W1
+    preferred_delivery: true
+  ackermann:
+    waiting_area: W2
+    preferred_inspection: true
+
+routes:
+  delivery_demo: [PICKUP_A, DELIVERY_C]
+  delivery_demo_2: [PICKUP_B, DELIVERY_D]
+  inspection_demo: [P1, P2, P3, P4]

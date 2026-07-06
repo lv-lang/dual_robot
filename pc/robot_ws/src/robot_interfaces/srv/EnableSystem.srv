@@ -1,0 +1,7 @@
+string requester
+bool operator_confirmed
+string reason
+---
+bool accepted
+SystemState system_state
+string message

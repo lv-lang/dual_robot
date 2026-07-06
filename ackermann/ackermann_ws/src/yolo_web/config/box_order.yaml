@@ -1,0 +1,16 @@
+box_class_names:
+  - box
+box_model_names:
+  - box_camera
+min_confidence: 0.0
+angle_thresh_deg: 10.0
+row_align_thresh_px: 25.0
+col_align_thresh_px: 25.0
+spacing_tolerance_ratio: 0.40
+min_contour_area_ratio: 0.03
+min_edge_points: 40
+min_edge_span_ratio: 0.25
+canny_low: 30
+canny_high: 120
+blur_kernel: 5
+log_interval_sec: 1.5

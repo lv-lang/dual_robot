@@ -1,0 +1,7 @@
+string requester
+---
+Task[] tasks
+RobotState[] robot_states
+ResourceLock[] resource_locks
+SystemState system_state
+string message

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="双车任务台">
+  <rect width="512" height="512" rx="92" fill="#183a37"/>
+  <path d="M96 326c0-76 62-138 138-138h44c76 0 138 62 138 138v50c0 22-18 40-40 40H136c-22 0-40-18-40-40v-50Z" fill="#f5f7f4"/>
+  <path d="M174 256h164c18 0 32 14 32 32v68c0 18-14 32-32 32H174c-18 0-32-14-32-32v-68c0-18 14-32 32-32Z" fill="#2f6f73"/>
+  <circle cx="203" cy="322" r="26" fill="#f5f7f4"/>
+  <circle cx="309" cy="322" r="26" fill="#f5f7f4"/>
+  <path d="M256 188v-70" stroke="#f5f7f4" stroke-width="26" stroke-linecap="round"/>
+  <circle cx="256" cy="98" r="24" fill="#d89f35"/>
+  <path d="M128 210 74 174M384 210l54-36" stroke="#f5f7f4" stroke-width="22" stroke-linecap="round"/>
+</svg>

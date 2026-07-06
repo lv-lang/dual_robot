@@ -1,0 +1,47 @@
+# ROS 2 / colcon generated files
+build/
+install/
+log/
+.colcon/
+
+# Python generated files
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node / frontend generated files
+node_modules/
+dist/
+coverage/
+.vite/
+
+# Local editor and OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.bak
+*.bak_*
+*.orig
+
+# Local runtime databases and logs
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Local archives and runtime data
+*.zip
+*.tar
+*.tar.gz
+*.7z
+*.docx
+*.pptx
+*.bag
+*.db3

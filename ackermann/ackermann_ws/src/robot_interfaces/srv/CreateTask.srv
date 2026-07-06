@@ -1,0 +1,15 @@
+# Create a task with a unified target sequence:
+# delivery: pickup then delivery; inspection: route points; recheck: abnormal point.
+
+uint8 task_type
+string requester
+MissionStep[] steps
+string parent_task_id
+string excluded_robot_id
+string preferred_robot_id
+string note
+---
+bool accepted
+string task_id
+Task task
+string message

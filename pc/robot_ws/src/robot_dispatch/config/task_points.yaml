@@ -1,0 +1,57 @@
+frame_id: map
+
+points:
+  W1:
+    kind: waiting_area
+    label: robot1 等待区
+    x: -8.5
+    y: -3.8
+    yaw: 0.0
+  W2:
+    kind: waiting_area
+    label: robot2 等待区
+    x: -8.5
+    y: 2.5
+    yaw: 0.0
+  PICKUP_A:
+    kind: pickup
+    label: A 取货点
+    x: -7.5
+    y: -3.8
+    yaw: 0.0
+  DELIVERY_C:
+    kind: delivery
+    label: C 配送点
+    x: -9.0
+    y: -3.8
+    yaw: 0.0
+  P1:
+    kind: inspection
+    label: P1 巡检点
+    x: -7.5
+    y: 2.5
+    yaw: 0.0
+  P2:
+    kind: inspection
+    label: P2 巡检点
+    x: -8.0
+    y: 2.5
+    yaw: 0.0
+  P3:
+    kind: inspection
+    label: P3 巡检点
+    x: -9.0
+    y: 2.5
+    yaw: 0.0
+
+robots:
+  robot1:
+    waiting_area: W1
+    preferred_delivery: true
+  robot2:
+    waiting_area: W2
+    preferred_inspection: true
+
+routes:
+  delivery_demo: [PICKUP_A, DELIVERY_C]
+  inspection_demo: [P1, P2, P3]

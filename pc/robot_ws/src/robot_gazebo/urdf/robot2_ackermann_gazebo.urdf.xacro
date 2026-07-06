@@ -1,0 +1,120 @@
+<?xml version="1.0"?>
+<robot name="robot2_ackermann_gazebo" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:include filename="$(find yahboomcar_description)/urdf/yahboomcar_R2_robot2.urdf.xacro"/>
+
+  <xacro:macro name="kinematic_link" params="link_name">
+    <gazebo reference="${link_name}">
+      <kinematic>true</kinematic>
+      <gravity>false</gravity>
+      <self_collide>false</self_collide>
+    </gazebo>
+  </xacro:macro>
+
+  <xacro:kinematic_link link_name="robot2/base_footprint"/>
+  <xacro:kinematic_link link_name="robot2/base_link"/>
+  <xacro:kinematic_link link_name="robot2/imu_link"/>
+  <xacro:kinematic_link link_name="robot2/back_right_link"/>
+  <xacro:kinematic_link link_name="robot2/back_left_link"/>
+  <xacro:kinematic_link link_name="robot2/front_left_steer"/>
+  <xacro:kinematic_link link_name="robot2/front_right_steer"/>
+  <xacro:kinematic_link link_name="robot2/front_left_wheel"/>
+  <xacro:kinematic_link link_name="robot2/front_right_wheel"/>
+  <xacro:kinematic_link link_name="robot2/camera_link"/>
+  <xacro:kinematic_link link_name="robot2/laser_link"/>
+
+  <gazebo reference="robot2/laser_link">
+    <kinematic>true</kinematic>
+    <gravity>false</gravity>
+    <self_collide>false</self_collide>
+    <sensor name="robot2_laser" type="ray">
+      <always_on>true</always_on>
+      <visualize>false</visualize>
+      <update_rate>10</update_rate>
+      <pose>0 0 0 0 0 0</pose>
+      <ray>
+        <scan>
+          <horizontal>
+            <samples>360</samples>
+            <resolution>1.0</resolution>
+            <min_angle>-3.14159</min_angle>
+            <max_angle>3.14159</max_angle>
+          </horizontal>
+        </scan>
+        <range>
+          <min>0.12</min>
+          <max>8.0</max>
+          <resolution>0.01</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.01</stddev>
+        </noise>
+      </ray>
+      <plugin name="robot2_laser_plugin" filename="libgazebo_ros_ray_sensor.so">
+        <ros>
+          <namespace>/robot2</namespace>
+          <remapping>~/out:=scan_raw</remapping>
+        </ros>
+        <output_type>sensor_msgs/LaserScan</output_type>
+        <frame_name>robot2/laser_link</frame_name>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <!-- G0/G1 keeps robot2 virtual camera sensors disabled.
+  <gazebo reference="robot2/camera_link">
+    <sensor name="robot2_color_camera" type="camera">
+      <always_on>true</always_on>
+      <visualize>true</visualize>
+      <update_rate>15</update_rate>
+      <camera>
+        <horizontal_fov>1.047</horizontal_fov>
+        <image>
+          <width>640</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>0.05</near>
+          <far>20.0</far>
+        </clip>
+      </camera>
+      <plugin name="robot2_color_camera_plugin" filename="libgazebo_ros_camera.so">
+        <ros>
+          <namespace>/robot2/camera</namespace>
+        </ros>
+        <camera_name>color</camera_name>
+        <frame_name>robot2/camera_link</frame_name>
+      </plugin>
+    </sensor>
+
+    <sensor name="robot2_depth_camera" type="depth">
+      <always_on>true</always_on>
+      <visualize>false</visualize>
+      <update_rate>15</update_rate>
+      <camera>
+        <horizontal_fov>1.047</horizontal_fov>
+        <image>
+          <width>640</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>0.1</near>
+          <far>8.0</far>
+        </clip>
+      </camera>
+      <plugin name="robot2_depth_camera_plugin" filename="libgazebo_ros_camera.so">
+        <ros>
+          <namespace>/robot2/camera</namespace>
+        </ros>
+        <camera_name>depth</camera_name>
+        <frame_name>robot2/camera_link</frame_name>
+        <min_depth>0.1</min_depth>
+        <max_depth>8.0</max_depth>
+      </plugin>
+    </sensor>
+  </gazebo>
+  -->
+</robot>

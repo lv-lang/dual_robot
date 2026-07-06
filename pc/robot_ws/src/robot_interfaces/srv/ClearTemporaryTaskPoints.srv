@@ -1,0 +1,8 @@
+# Remove runtime RViz task points that are not referenced by active tasks.
+
+string requester
+---
+bool accepted
+uint32 cleared_count
+string[] blocked_point_ids
+string message

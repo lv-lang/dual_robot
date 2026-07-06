@@ -1,0 +1,47 @@
+/robot1/robot1_mpc_dwb_planner:
+  ros__parameters:
+    global_path_topic: /robot1/global_path
+    odom_topic: /robot1/odom
+    scan_topic: /robot1/scan
+    cmd_vel_topic: /robot1/cmd_vel
+    local_path_topic: /robot1/local_path
+    planner_state_topic: /robot1/planner_state
+
+    control_frequency: 15.0
+    path_timeout: 0.0
+    odom_timeout: 0.5
+    scan_timeout: 0.5
+    require_fresh_scan: true
+
+    xy_goal_tolerance: 0.12
+    lookahead_distance: 0.65
+    reacquire_distance: 0.75
+    closest_search_window: 40
+
+    # First migration stage follows rl_nav_ws MPC tracker: diff-drive v/w only.
+    # robot1 is still mecanum; linear.y will be restored in the next omnidirectional stage.
+    min_vx: 0.0
+    min_tracking_vx: 0.06
+    max_vx: 0.32
+    max_wz: 0.65
+    rotate_in_place_heading_error: 2.35
+    target_speed: 0.24
+    acc_lim_x: 0.50
+    acc_lim_theta: 0.80
+
+    vx_samples: 6
+    wz_samples: 9
+    horizon_steps: 14
+    dt: 0.10
+
+    front_check_distance: 0.75
+    front_check_width: 0.34
+    hard_stop_distance: 0.18
+
+    path_weight: 5.0
+    goal_weight: 1.0
+    heading_weight: 0.55
+    progress_weight: 0.65
+    velocity_weight: 0.35
+    smoothness_weight: 0.90
+    angular_weight: 0.35

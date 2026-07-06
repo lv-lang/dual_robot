@@ -1,0 +1,13 @@
+box
+shelf
+number_1
+number_2
+number_3
+number_4
+number_5
+letter_A
+letter_B
+letter_C
+letter_D
+letter_E
+Fire-hydrant

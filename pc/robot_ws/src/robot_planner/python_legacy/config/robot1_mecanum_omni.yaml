@@ -1,0 +1,66 @@
+/robot1/robot1_mecanum_omni_planner:
+  ros__parameters:
+    global_path_topic: /robot1/global_path
+    odom_topic: /robot1/odom
+    scan_topic: /robot1/scan
+    local_path_topic: /robot1/local_path
+    cmd_vel_raw_topic: /robot1/cmd_vel_raw
+    planner_state_topic: /robot1/planner_state
+
+    planner_mode: mecanum_omni
+    fallback_planner_mode: simple_tracker
+    enable_lateral_motion: true
+    enable_vy: true
+
+    control_frequency: 10.0
+    lookahead_distance: 0.45
+    goal_tolerance: 0.12
+    path_timeout: 0.0
+    odom_timeout: 0.5
+    scan_timeout: 0.5
+    require_fresh_scan: false
+    velocity_feedback_mode: last_command
+
+    min_vx: 0.0
+    max_vx: 0.25
+    min_vy: -0.16
+    max_vy: 0.16
+    max_wz: 0.70
+    acc_lim_x: 0.35
+    acc_lim_y: 0.30
+    acc_lim_theta: 0.90
+
+    vx_samples: 5
+    vy_samples: 5
+    wz_samples: 7
+    sim_time: 1.4
+    dt: 0.1
+    use_dynamic_window: true
+    target_velocity: 0.22
+
+    robot_length: 0.24
+    robot_width: 0.20
+    obstacle_margin: 0.07
+    obstacle_range: 2.5
+    obstacle_angle_stride: 2
+    front_stop_distance: 0.38
+    front_stop_angle: 0.70
+
+    k_linear: 0.70
+    k_lateral: 0.55
+    k_angular: 1.10
+
+    weight_path_distance: 2.2
+    weight_target_distance: 3.0
+    weight_heading: 0.9
+    weight_obstacle: 0.8
+    weight_lateral_velocity: 0.25
+    weight_smoothness: 0.55
+    weight_speed: 0.12
+    weight_velocity: 0.12
+    weight_oscillation: 0.8
+
+    external_dwa_angle_resolution: 0.087
+    external_dwa_angle_to_goal_turn_threshold: 0.35
+    external_dwa_min_in_place_wz: 0.18
+    external_dwa_max_in_place_wz: 0.70

@@ -1,0 +1,1049 @@
+from __future__ import annotations
+
+import json
+import threading
+import time
+from datetime import datetime
+from dataclasses import dataclass
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Callable, Optional
+
+import cv2
+import numpy as np
+import rclpy
+from rclpy.executors import ExternalShutdownException
+from rclpy.node import Node
+from geometry_msgs.msg import Twist
+from std_msgs.msg import String
+from scipy.special import softmax
+
+from yolo_web.detect_box import (
+    BoxOrderConfig,
+    BoxOrderResult,
+    analyze_box_order,
+    draw_box_order_result,
+    load_box_order_config,
+)
+
+
+BOUNDARY = b"frame"
+
+
+def package_asset_path(*parts: str) -> str:
+    """Return an installed yolo_web asset path, falling back to the source tree."""
+    try:
+        from ament_index_python.packages import get_package_share_directory
+
+        package_root = Path(get_package_share_directory("yolo_web"))
+    except Exception:
+        package_root = Path(__file__).resolve().parents[1]
+    return str(package_root.joinpath(*parts))
+
+
+DEFAULT_MODEL_PATH = package_asset_path("models", "box_camera_best_bayese_640x640_nv12.bin")
+DEFAULT_LABEL_FILE = package_asset_path("models", "classes.txt")
+DEFAULT_FIRE_SMOKE_MODEL_PATH = package_asset_path("models", "fire_smoke_best_bayese_640x640_nv12.bin")
+DEFAULT_FIRE_SMOKE_LABEL_FILE = package_asset_path("models", "fire_smoke.list")
+DEFAULT_BOX_ORDER_CONFIG = package_asset_path("config", "box_order.yaml")
+
+
+@dataclass(frozen=True)
+class Detection:
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+    score: float
+    class_id: int
+    label: str = ""
+    model_name: str = ""
+
+
+@dataclass(frozen=True)
+class PointContext:
+    point_id: str
+    point_type: str
+    label: str
+    score: float
+
+    @property
+    def key(self) -> str:
+        return f"{self.point_type}:{self.point_id}"
+
+
+POINT_IDLE = "idle"
+POINT_WAITING_ARRIVAL_STOP = "waiting_arrival_stop"
+POINT_ARRIVAL_REPORTED_WAITING_MOVE = "arrival_reported_waiting_move"
+POINT_MOVING_TO_TARGET = "moving_to_target"
+POINT_WAITING_INSPECTION_STOP = "waiting_inspection_stop"
+POINT_INSPECTION_ENABLED = "inspection_enabled"
+
+PICKUP_NUMBERS = {"1", "3"}
+DELIVERY_NUMBERS = {"2", "4"}
+LETTER_POINTS = {"A", "B", "C", "D", "E"}
+
+
+def parameter_as_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def build_mjpeg_frame(jpeg_bytes: bytes) -> bytes:
+    return (
+        b"--" + BOUNDARY + b"\r\n"
+        b"Content-Type: image/jpeg\r\n"
+        b"Content-Length: " + str(len(jpeg_bytes)).encode("ascii") + b"\r\n"
+        b"\r\n" + jpeg_bytes + b"\r\n"
+    )
+
+
+def load_labels(label_file: str, classes_num: int) -> list[str]:
+    labels: list[str] = []
+    if label_file:
+        try:
+            with open(label_file, "r", encoding="utf-8") as handle:
+                labels = [line.strip() for line in handle if line.strip()]
+        except OSError:
+            labels = []
+    if len(labels) < classes_num:
+        labels.extend(f"class_{idx}" for idx in range(len(labels), classes_num))
+    return labels
+
+
+def letterbox_image(image: np.ndarray, input_w: int, input_h: int) -> np.ndarray:
+    img_h, img_w = image.shape[:2]
+    scale = min(input_h / img_h, input_w / img_w)
+    new_w, new_h = int(img_w * scale), int(img_h * scale)
+    resized = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
+    pad_w = input_w - new_w
+    pad_h = input_h - new_h
+    left, right = pad_w // 2, pad_w - pad_w // 2
+    top, bottom = pad_h // 2, pad_h - pad_h // 2
+    return cv2.copyMakeBorder(
+        resized,
+        top,
+        bottom,
+        left,
+        right,
+        borderType=cv2.BORDER_CONSTANT,
+        value=(127, 127, 127),
+    )
+
+
+def bgr_to_nv12_tensor(image: np.ndarray) -> np.ndarray:
+    height, width = image.shape[:2]
+    area = height * width
+    yuv420p = cv2.cvtColor(image, cv2.COLOR_BGR2YUV_I420).reshape((area * 3 // 2,))
+    y = yuv420p[:area].reshape((height, width))
+    u = yuv420p[area: area + area // 4].reshape((height // 2, width // 2))
+    v = yuv420p[area + area // 4:].reshape((height // 2, width // 2))
+    uv = np.stack((u, v), axis=-1)
+    nv12 = np.concatenate((y.reshape(-1), uv.reshape(-1)), axis=0)
+    return nv12.reshape((1, height * 3 // 2, width, 1))
+
+
+def scale_coords_back(boxes: np.ndarray, img_w: int, img_h: int, input_w: int, input_h: int) -> np.ndarray:
+    if boxes.size == 0:
+        return boxes
+    scale = min(input_w / img_w, input_h / img_h)
+    pad_w = (input_w - img_w * scale) / 2
+    pad_h = (input_h - img_h * scale) / 2
+    boxes[:, [0, 2]] = (boxes[:, [0, 2]] - pad_w) / scale
+    boxes[:, [1, 3]] = (boxes[:, [1, 3]] - pad_h) / scale
+    boxes[:, [0, 2]] = np.clip(boxes[:, [0, 2]], 0, img_w)
+    boxes[:, [1, 3]] = np.clip(boxes[:, [1, 3]], 0, img_h)
+    return boxes
+
+
+def nms_classwise(boxes: np.ndarray, scores: np.ndarray, class_ids: np.ndarray, iou_threshold: float) -> list[int]:
+    keep: list[int] = []
+    if boxes.size == 0:
+        return keep
+    for class_id in np.unique(class_ids):
+        indices = np.where(class_ids == class_id)[0]
+        x1, y1, x2, y2 = boxes[indices].T
+        areas = np.maximum(x2 - x1, 0) * np.maximum(y2 - y1, 0)
+        order = scores[indices].argsort()[::-1]
+        while order.size > 0:
+            current = order[0]
+            keep.append(indices[current])
+            xx1 = np.maximum(x1[current], x1[order[1:]])
+            yy1 = np.maximum(y1[current], y1[order[1:]])
+            xx2 = np.minimum(x2[current], x2[order[1:]])
+            yy2 = np.minimum(y2[current], y2[order[1:]])
+            inter = np.maximum(xx2 - xx1, 0) * np.maximum(yy2 - yy1, 0)
+            union = areas[current] + areas[order[1:]] - inter + 1e-9
+            order = order[1:][inter / union < iou_threshold]
+    return keep
+
+
+def gen_anchor(grid_size: int) -> np.ndarray:
+    x = np.tile(np.linspace(0.5, grid_size - 0.5, grid_size), reps=grid_size)
+    y = np.repeat(np.linspace(0.5, grid_size - 0.5, grid_size), grid_size)
+    return np.stack([x, y], axis=1)
+
+
+def draw_detections(image: np.ndarray, detections: list[Detection]) -> np.ndarray:
+    drawn = image.copy()
+    for detection in detections:
+        x1 = int(round(detection.x1))
+        y1 = int(round(detection.y1))
+        x2 = int(round(detection.x2))
+        y2 = int(round(detection.y2))
+        color = (
+            int((37 * detection.class_id + 80) % 255),
+            int((17 * detection.class_id + 180) % 255),
+            int((97 * detection.class_id + 40) % 255),
+        )
+        prefix = f"{detection.model_name}:" if detection.model_name else ""
+        label = detection.label or f"class_{detection.class_id}"
+        text = f"{prefix}{label} {detection.score:.2f}"
+        cv2.rectangle(drawn, (x1, y1), (x2, y2), color, 2)
+        text_size, baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+        text_w, text_h = text_size
+        box_y1 = max(y1 - text_h - baseline - 4, 0)
+        cv2.rectangle(drawn, (x1, box_y1), (x1 + text_w + 6, box_y1 + text_h + baseline + 4), color, -1)
+        cv2.putText(drawn, text, (x1 + 3, box_y1 + text_h + 1), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+    cv2.putText(drawn, f"detections: {len(detections)}", (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2, cv2.LINE_AA)
+    return drawn
+
+
+def build_index_html() -> bytes:
+    html = """<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>YOLO Web</title></head>
+<body style="margin:0;background:#111;height:100vh;overflow:hidden;">
+<div style="position:relative;width:100vw;height:100vh;">
+<img src="/stream.mjpg" style="width:100vw;height:100vh;object-fit:contain;display:block;" />
+<div id="arrivalOverlay" style="position:absolute;top:18px;left:18px;display:none;max-width:360px;background:rgba(24,24,24,0.9);color:#fff;border:1px solid #666;padding:14px 16px;z-index:10;font-family:sans-serif;">
+  <div id="arrivalText" style="font-size:18px;line-height:1.5;margin-bottom:12px;"></div>
+  <button id="arrivalConfirm" style="font-size:16px;padding:8px 14px;border:0;background:#1f7aec;color:#fff;cursor:pointer;">确认开始巡检</button>
+</div>
+<div id="inspectionResultOverlay" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:none;width:min(520px,calc(100vw - 44px));box-sizing:border-box;background:rgba(14,20,30,0.96);color:#fff;border:2px solid #8fd3ff;box-shadow:0 24px 80px rgba(0,0,0,0.6);padding:20px 22px;z-index:12;font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;">
+  <div id="inspectionResultTitle" style="font-size:22px;font-weight:800;margin-bottom:10px;">巡检结果</div>
+  <div id="inspectionResultText" style="font-size:18px;line-height:1.6;margin-bottom:12px;"></div>
+  <div id="inspectionResultMeta" style="font-size:13px;line-height:1.5;color:#b9c7da;white-space:pre-wrap;margin-bottom:16px;"></div>
+  <button id="inspectionResultClose" style="font-size:16px;padding:8px 16px;border:0;background:#1f7aec;color:#fff;cursor:pointer;">知道了</button>
+</div>
+<div id="temporaryAppReceiver" style="position:absolute;top:18px;right:18px;width:min(430px,calc(100vw - 36px));max-height:calc(100vh - 36px);box-sizing:border-box;background:rgba(8,12,18,0.92);color:#e8f0ff;border:1px solid rgba(159,191,255,0.55);box-shadow:0 18px 48px rgba(0,0,0,0.45);padding:14px 14px 12px;z-index:9;font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px;">
+    <div>
+      <div style="font-size:18px;font-weight:700;letter-spacing:0.04em;">临时 APP 接收</div>
+      <div style="font-size:12px;color:#94a9c9;margin-top:3px;">监听 ws://当前小车:8000/websocket/events</div>
+    </div>
+    <button id="clearAppEvents" style="font-size:13px;padding:6px 10px;border:1px solid #4b638a;background:#19263a;color:#e8f0ff;cursor:pointer;">清空</button>
+  </div>
+  <div id="appEventStatus" style="font-size:13px;color:#ffd166;margin-bottom:10px;">网关连接中...</div>
+  <div id="appEventList" data-empty="1" style="max-height:calc(100vh - 148px);overflow:auto;font-size:13px;line-height:1.45;">等待 /app/event 消息...</div>
+</div>
+</div>
+<script>
+(function () {
+  const overlay = document.getElementById('arrivalOverlay');
+  const text = document.getElementById('arrivalText');
+  const button = document.getElementById('arrivalConfirm');
+  const resultOverlay = document.getElementById('inspectionResultOverlay');
+  const resultTitle = document.getElementById('inspectionResultTitle');
+  const resultText = document.getElementById('inspectionResultText');
+  const resultMeta = document.getElementById('inspectionResultMeta');
+  const resultClose = document.getElementById('inspectionResultClose');
+  const appEventStatus = document.getElementById('appEventStatus');
+  const appEventList = document.getElementById('appEventList');
+  const clearAppEvents = document.getElementById('clearAppEvents');
+  const ws = new WebSocket('ws://' + location.hostname + ':8000/websocket/events');
+  const maxAppEvents = 30;
+  let pendingEvent = null;
+
+  function showArrival(event) {
+    pendingEvent = event;
+    text.textContent = event.message || ('已到达巡航点' + (event.patrol_point || '') + '点');
+    overlay.style.display = 'block';
+  }
+
+  function showInspectionResult(event) {
+    const status = event.status || '';
+    const isAbnormal = status === 'abnormal' || event.level === 'warn';
+    resultTitle.textContent = isAbnormal ? '巡检结果：异常' : '巡检结果';
+    resultTitle.style.color = isAbnormal ? '#ff8a8a' : '#7bd88f';
+    resultText.textContent = event.message || '收到巡检结果';
+    resultMeta.textContent = [
+      '点位：' + (event.location || event.patrol_point || '未知'),
+      '状态：' + (event.status || '未知'),
+      '类型：' + (event.event_type || '未知'),
+      '事件码：' + (event.event_code || '未知')
+    ].join('
+');
+    resultOverlay.style.display = 'block';
+  }
+
+  function appendAppEvent(event, rawData) {
+    if (appEventList.dataset.empty === '1') {
+      appEventList.textContent = '';
+      appEventList.dataset.empty = '0';
+    }
+
+    const item = document.createElement('div');
+    item.style.borderTop = '1px solid rgba(148,169,201,0.28)';
+    item.style.padding = '9px 0';
+
+    const summaryParts = [event.event_type, event.event_code, event.patrol_point].filter(Boolean);
+    const title = document.createElement('div');
+    title.style.color = '#8fd3ff';
+    title.style.fontWeight = '700';
+    title.textContent = '[' + new Date().toLocaleTimeString() + '] ' + (summaryParts.join(' | ') || 'raw event');
+
+    const message = document.createElement('div');
+    message.style.color = '#fff';
+    message.style.marginTop = '4px';
+    message.textContent = event.message || rawData;
+
+    const raw = document.createElement('pre');
+    raw.style.margin = '7px 0 0';
+    raw.style.whiteSpace = 'pre-wrap';
+    raw.style.wordBreak = 'break-word';
+    raw.style.color = '#b9c7da';
+    raw.style.fontSize = '12px';
+    raw.textContent = JSON.stringify(event, null, 2);
+
+    item.appendChild(title);
+    item.appendChild(message);
+    item.appendChild(raw);
+    appEventList.prepend(item);
+
+    while (appEventList.children.length > maxAppEvents) {
+      appEventList.removeChild(appEventList.lastChild);
+    }
+  }
+
+  ws.onopen = function () {
+    appEventStatus.textContent = '网关已连接，等待 APP 事件';
+    appEventStatus.style.color = '#7bd88f';
+  };
+
+  ws.onclose = function () {
+    appEventStatus.textContent = '网关连接已断开，请确认 app_gateway 是否运行';
+    appEventStatus.style.color = '#ff8a8a';
+  };
+
+  ws.onerror = function () {
+    appEventStatus.textContent = '网关连接异常，请检查 8000 端口';
+    appEventStatus.style.color = '#ff8a8a';
+  };
+
+  ws.onmessage = function (e) {
+    try {
+      const event = JSON.parse(e.data);
+      appendAppEvent(event, e.data);
+      if (event.event_type === 'arrival') {
+        showArrival(event);
+      } else if (event.event_type !== 'arrival') {
+        showInspectionResult(event);
+      }
+    } catch (err) {
+      appendAppEvent({event_type: 'raw', message: e.data}, e.data);
+      console.log('event parse failed', err);
+    }
+  };
+
+  clearAppEvents.onclick = function () {
+    appEventList.textContent = '等待 /app/event 消息...';
+    appEventList.dataset.empty = '1';
+  };
+
+  resultClose.onclick = function () {
+    resultOverlay.style.display = 'none';
+  };
+
+  button.onclick = function () {
+    overlay.style.display = 'none';
+    if (!pendingEvent) {
+      return;
+    }
+    fetch('/arrival_confirm', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        robot_id: pendingEvent.robot_id,
+        patrol_point: pendingEvent.patrol_point,
+        confirmed: true
+      })
+    }).catch(err => console.log('confirm failed', err));
+    pendingEvent = null;
+  };
+})();
+</script>
+</body>
+</html>
+"""
+    return html.encode("utf-8")
+
+
+class YoloV8Detector:
+    def __init__(self, model_path: str, label_file: str, score_threshold: float, nms_threshold: float, display_name: str):
+        import hbm_runtime
+
+        self.model = hbm_runtime.HB_HBMRuntime(model_path)
+        self.display_name = display_name
+        self.model_name = self.model.model_names[0]
+        self.input_names = self.model.input_names[self.model_name]
+        self.output_names = self.model.output_names[self.model_name]
+        self.input_shapes = self.model.input_shapes[self.model_name]
+        self.input_h = self.input_shapes[self.input_names[0]][2]
+        self.input_w = self.input_shapes[self.input_names[0]][3]
+        self.score_threshold = score_threshold
+        self.conf_threshold_raw = -np.log(1 / score_threshold - 1)
+        self.nms_threshold = nms_threshold
+        self.reg = 16
+        self.strides = [8, 16, 32]
+        self.anchor_sizes = [80, 40, 20]
+        self.weights_static = np.arange(self.reg, dtype=np.float32)[np.newaxis, np.newaxis, :]
+        self.classes_num = int(self.model.output_shapes[self.model_name][self.output_names[0]][-1])
+        self.labels = load_labels(label_file, self.classes_num)
+        self.lock = threading.Lock()
+
+    def pre_process(self, frame: np.ndarray) -> dict:
+        resized = letterbox_image(frame, self.input_w, self.input_h)
+        nv12 = bgr_to_nv12_tensor(resized)
+        return {self.model_name: {self.input_names[0]: nv12}}
+
+    def detect(self, frame: np.ndarray) -> list[Detection]:
+        img_h, img_w = frame.shape[:2]
+        with self.lock:
+            outputs = self.model.run(self.pre_process(frame))[self.model_name]
+        boxes, class_ids, scores = self.post_process(outputs, img_w, img_h)
+        detections: list[Detection] = []
+        for box, class_id, score in zip(boxes, class_ids, scores):
+            class_idx = int(class_id)
+            detections.append(Detection(
+                float(box[0]), float(box[1]), float(box[2]), float(box[3]), float(score), class_idx,
+                self.labels[class_idx] if class_idx < len(self.labels) else f"class_{class_idx}",
+                self.display_name,
+            ))
+        return detections
+
+    def post_process(self, outputs: dict, img_w: int, img_h: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        decoded_boxes = []
+        decoded_scores = []
+        decoded_ids = []
+        for i, (stride, anchor_size) in enumerate(zip(self.strides, self.anchor_sizes)):
+            cls_output = outputs[self.output_names[2 * i]].reshape(-1, outputs[self.output_names[2 * i]].shape[-1])
+            box_output = outputs[self.output_names[2 * i + 1]].reshape(-1, outputs[self.output_names[2 * i + 1]].shape[-1])
+            max_scores = np.max(cls_output, axis=1)
+            valid_indices = np.flatnonzero(max_scores >= self.conf_threshold_raw)
+            if valid_indices.size == 0:
+                decoded_boxes.append(np.empty((0, 4), dtype=np.float32))
+                decoded_scores.append(np.empty((0,), dtype=np.float32))
+                decoded_ids.append(np.empty((0,), dtype=np.int32))
+                continue
+            class_ids = np.argmax(cls_output[valid_indices], axis=1).astype(np.int32)
+            scores = (1 / (1 + np.exp(-max_scores[valid_indices]))).astype(np.float32)
+            selected_boxes = box_output[valid_indices]
+            ltrb = np.sum(softmax(selected_boxes.reshape(-1, 4, self.reg), axis=2) * self.weights_static, axis=2)
+            anchor = gen_anchor(anchor_size)[valid_indices]
+            x1y1 = anchor - ltrb[:, 0:2]
+            x2y2 = anchor + ltrb[:, 2:4]
+            decoded_boxes.append((np.hstack([x1y1, x2y2]) * stride).astype(np.float32))
+            decoded_scores.append(scores)
+            decoded_ids.append(class_ids)
+        boxes = np.concatenate(decoded_boxes, axis=0)
+        scores = np.concatenate(decoded_scores, axis=0)
+        class_ids = np.concatenate(decoded_ids, axis=0)
+        keep = nms_classwise(boxes, scores, class_ids, self.nms_threshold)
+        if not keep:
+            return np.empty((0, 4), dtype=np.float32), np.empty((0,), dtype=np.int32), np.empty((0,), dtype=np.float32)
+        boxes = scale_coords_back(boxes[keep], img_w, img_h, self.input_w, self.input_h)
+        return boxes, class_ids[keep], scores[keep]
+
+
+class SharedUsbCamera:
+    def __init__(
+        self,
+        device: str,
+        width: int,
+        height: int,
+        fps: int,
+        jpeg_quality: int,
+        detectors: Optional[list[YoloV8Detector]] = None,
+        enable_box_order_check: bool = False,
+        box_order_config: Optional[BoxOrderConfig] = None,
+        box_order_log_callback: Optional[Callable[[str], None]] = None,
+        box_order_warn_callback: Optional[Callable[[str], None]] = None,
+        inspection_event_callback: Optional[Callable[[str], None]] = None,
+        robot_id: str = "robot_a",
+        raw_event_interval_sec: float = 1.0,
+        stop_hold_sec: float = 1.0,
+        stop_epsilon: float = 1e-3,
+    ):
+        self.device = device
+        self.width = width
+        self.height = height
+        self.fps = fps
+        self.jpeg_quality = jpeg_quality
+        self.detectors = detectors or []
+        self.enable_box_order_check = enable_box_order_check
+        self.box_order_config = box_order_config or BoxOrderConfig()
+        self.box_order_log_callback = box_order_log_callback
+        self.box_order_warn_callback = box_order_warn_callback
+        self.inspection_event_callback = inspection_event_callback
+        self.robot_id = robot_id
+        self.raw_event_interval_sec = float(raw_event_interval_sec)
+        self.stop_hold_sec = max(float(stop_hold_sec), 0.0)
+        self.stop_epsilon = max(float(stop_epsilon), 0.0)
+        self._last_raw_event_time = float("-inf")
+        self._motion_is_stopped = False
+        self._motion_stopped_since: Optional[float] = None
+        self._point_state = POINT_IDLE
+        self._current_point: Optional[PointContext] = None
+        self._reported_point_keys: set[str] = set()
+        self._completed_point_keys: set[str] = set()
+        self._last_patrol_point: Optional[str] = None
+        self._reported_arrival_points: set[str] = set()
+        self._last_box_order_info_time = 0.0
+        self._last_box_order_warn_time = 0.0
+        self._last_box_order_state = None
+        self._last_hazard_labels: set[str] = set()
+        self._lock = threading.Lock()
+        self._cap: Optional[cv2.VideoCapture] = None
+
+    def open(self) -> None:
+        with self._lock:
+            if self._cap is not None and self._cap.isOpened():
+                return
+            cap = cv2.VideoCapture(self.device)
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+            cap.set(cv2.CAP_PROP_FPS, self.fps)
+            if not cap.isOpened():
+                cap.release()
+                raise RuntimeError(f"failed to open camera device {self.device}")
+            self._cap = cap
+
+    def read_jpeg(self) -> Optional[bytes]:
+        with self._lock:
+            if self._cap is None or not self._cap.isOpened():
+                return None
+            ok, frame = self._cap.read()
+        if not ok or frame is None:
+            return None
+
+        source_frame = frame.copy()
+        detections: list[Detection] = []
+        for detector in self.detectors:
+            detections.extend(detector.detect(frame))
+        if self.detectors:
+            frame = draw_detections(frame, detections)
+
+        box_order_result: Optional[BoxOrderResult] = None
+        if self.enable_box_order_check:
+            try:
+                box_order_result = analyze_box_order(source_frame, detections, self.box_order_config)
+                frame = draw_box_order_result(frame, box_order_result)
+                self._log_box_order_result(box_order_result)
+            except Exception as exc:  # Keep the web stream alive even if one frame fails.
+                self._log_box_order_message(f"箱子摆放异常判断失败：{exc}")
+
+        self._log_hazard_detections(detections)
+        self._publish_raw_detection_event(detections, box_order_result)
+
+        ok, encoded = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality])
+        if not ok:
+            return None
+        return encoded.tobytes()
+
+    def _log_hazard_detections(self, detections: list[Detection]) -> None:
+        current_labels = {det.label for det in detections if det.model_name == "fire_smoke" and det.label in {"fire", "smoke"}}
+        if not current_labels:
+            self._last_hazard_labels = set()
+            return
+        new_labels = current_labels - self._last_hazard_labels
+        for label, message in (("fire", "检测到疑似火焰"), ("smoke", "检测到疑似烟雾")):
+            if label in new_labels:
+                self._log_box_order_message(message, warn=True, force=True)
+        self._last_hazard_labels = current_labels
+
+    def update_motion_state(self, twist, now: Optional[float] = None) -> None:
+        if now is None:
+            now = time.monotonic()
+        values = (
+            float(getattr(twist.linear, "x", 0.0)),
+            float(getattr(twist.linear, "y", 0.0)),
+            float(getattr(twist.linear, "z", 0.0)),
+            float(getattr(twist.angular, "x", 0.0)),
+            float(getattr(twist.angular, "y", 0.0)),
+            float(getattr(twist.angular, "z", 0.0)),
+        )
+        stopped = all(abs(value) <= self.stop_epsilon for value in values)
+        self._set_motion_stopped(stopped, now)
+
+    def _set_motion_stopped(self, stopped: bool, now: float) -> None:
+        was_stopped = self._motion_is_stopped
+        self._motion_is_stopped = stopped
+        if stopped:
+            if not was_stopped:
+                self._motion_stopped_since = now
+            if self._point_state == POINT_MOVING_TO_TARGET:
+                self._point_state = POINT_WAITING_INSPECTION_STOP
+            return
+
+        self._motion_stopped_since = None
+        if self._point_state == POINT_ARRIVAL_REPORTED_WAITING_MOVE:
+            self._point_state = POINT_MOVING_TO_TARGET
+        elif self._point_state == POINT_INSPECTION_ENABLED:
+            self._finish_current_point()
+
+    def _has_stopped_for_required_time(self, now: float) -> bool:
+        if not self._motion_is_stopped or self._motion_stopped_since is None:
+            return False
+        return now - self._motion_stopped_since >= self.stop_hold_sec
+
+    def _publish_raw_detection_event(self, detections: list[Detection], box_order_result: Optional[BoxOrderResult]) -> bool:
+        now = time.monotonic()
+        current_point = self._extract_point_context(detections)
+        if self._current_point is None and current_point is not None and current_point.key not in self._completed_point_keys:
+            self._start_point_context(current_point)
+
+        event = self._build_gated_detection_event(detections, box_order_result, now)
+        if event is None:
+            return False
+
+        interval = max(self.raw_event_interval_sec, 0.0)
+        if interval > 0.0 and now - self._last_raw_event_time < interval:
+            return False
+
+        self._last_raw_event_time = now
+        self._publish_event_dict(event)
+        self._after_event_published(event)
+        return True
+
+    def _build_gated_detection_event(
+        self,
+        detections: list[Detection],
+        box_order_result: Optional[BoxOrderResult],
+        now: float,
+    ) -> Optional[dict]:
+        point = self._current_point
+        if point is None:
+            return None
+
+        if self._point_state == POINT_WAITING_ARRIVAL_STOP:
+            if not self._has_stopped_for_required_time(now):
+                return None
+            if point.key in self._reported_point_keys:
+                self._point_state = POINT_ARRIVAL_REPORTED_WAITING_MOVE
+                return None
+            return self._build_arrival_event(point)
+
+        if self._point_state in {POINT_ARRIVAL_REPORTED_WAITING_MOVE, POINT_MOVING_TO_TARGET}:
+            return None
+
+        if self._point_state == POINT_WAITING_INSPECTION_STOP:
+            if not self._has_stopped_for_required_time(now):
+                return None
+            self._point_state = POINT_INSPECTION_ENABLED
+
+        if self._point_state == POINT_INSPECTION_ENABLED:
+            if point.point_type == "patrol":
+                if self._has_only_ignored_app_detections(detections) and box_order_result is None:
+                    return None
+                return self._build_raw_detection_event(
+                    detections,
+                    box_order_result,
+                    point.point_id,
+                    None,
+                    False,
+                )
+            return self._build_shelf_task_event(point, detections)
+
+        return None
+
+    def _build_arrival_event(self, point: PointContext) -> dict:
+        base = self._event_base_for_point(point)
+        if point.point_type == "patrol":
+            return {**base, "level": "info", "status": "arrived", "event_type": "arrival", "event_code": f"PATROL_POINT_{point.point_id}", "message": f"已到达巡航点{point.point_id}点"}
+        if point.point_type == "pickup":
+            return {**base, "level": "info", "status": "arrived", "event_type": "arrival", "event_code": f"PICKUP_POINT_{point.point_id}", "message": "已到达检货点"}
+        return {**base, "level": "info", "status": "arrived", "event_type": "arrival", "event_code": f"DELIVERY_POINT_{point.point_id}", "message": "已到达送货点"}
+
+    def _build_shelf_task_event(self, point: PointContext, detections: list[Detection]) -> Optional[dict]:
+        has_shelf = any(det.model_name == "box_camera" and det.label == "shelf" for det in detections)
+        if not has_shelf:
+            return None
+        base = self._event_base_for_point(point)
+        if point.point_type == "pickup":
+            return {**base, "level": "info", "status": "ready", "event_type": "shelf", "event_code": "SHELF_PICKUP_READY", "message": "已检测到货架，开始检货"}
+        return {**base, "level": "info", "status": "ready", "event_type": "shelf", "event_code": "SHELF_DELIVERY_READY", "message": "已检测到货架，开始送货"}
+
+    def _event_base_for_point(self, point: PointContext) -> dict:
+        if point.point_type == "patrol":
+            location = f"巡检点{point.point_id}"
+        elif point.point_type == "pickup":
+            location = f"检货点{point.point_id}"
+        else:
+            location = f"送货点{point.point_id}"
+        return {
+            "robot_id": self.robot_id,
+            "patrol_point": point.point_id,
+            "location": location,
+            "task_point_type": point.point_type,
+            "timestamp": datetime.now().isoformat(),
+        }
+
+    def _after_event_published(self, event: dict) -> None:
+        point = self._current_point
+        if point is None:
+            return
+        if event.get("event_type") == "arrival":
+            self._reported_point_keys.add(point.key)
+            self._reported_arrival_points.add(point.point_id)
+            self._point_state = POINT_ARRIVAL_REPORTED_WAITING_MOVE
+            return
+        if self._point_state == POINT_INSPECTION_ENABLED:
+            self._finish_current_point()
+
+    def _has_only_ignored_app_detections(self, detections: list[Detection]) -> bool:
+        return bool(detections) and all(det.model_name == "box_camera" and det.label == "Fire-hydrant" for det in detections)
+
+    def _build_raw_detection_event(
+        self,
+        detections: list[Detection],
+        box_order_result: Optional[BoxOrderResult],
+        patrol_point: str,
+        current_patrol_point: Optional[str],
+        is_new_arrival: bool,
+    ) -> Optional[dict]:
+        location = f"巡检点{patrol_point}" if patrol_point != "UNKNOWN" else "未知巡检点"
+        base = {
+            "robot_id": self.robot_id,
+            "patrol_point": patrol_point,
+            "location": location,
+            "timestamp": datetime.now().isoformat(),
+        }
+        if is_new_arrival and current_patrol_point is not None:
+            return {**base, "level": "info", "status": "arrived", "event_type": "arrival", "event_code": f"PATROL_POINT_{current_patrol_point}", "message": f"已到达巡航点{current_patrol_point}点"}
+        hazard_labels = {det.label for det in detections if det.model_name == "fire_smoke" and det.label in {"fire", "smoke"}}
+        if "fire" in hazard_labels:
+            return {**base, "level": "warn", "status": "abnormal", "event_type": "fire", "event_code": "FIRE_DETECTED", "message": "检测到疑似火焰"}
+        if "smoke" in hazard_labels:
+            return {**base, "level": "warn", "status": "abnormal", "event_type": "smoke", "event_code": "SMOKE_DETECTED", "message": "检测到疑似烟雾"}
+        if box_order_result is not None and box_order_result.box_count > 0 and not box_order_result.is_tidy:
+            return {**base, "level": "warn", "status": "abnormal", "event_type": "box_order", "event_code": "BOX_ORDER_ABNORMAL", "message": "箱子摆放状态：异常"}
+        return {**base, "level": "info", "status": "normal", "event_type": "inspection", "event_code": "NORMAL", "message": "当前巡检点未发现异常"}
+
+    def _extract_point_context(self, detections: list[Detection]) -> Optional[PointContext]:
+        best_point: Optional[PointContext] = None
+        best_score = -1.0
+        for det in detections:
+            if det.model_name and det.model_name != "box_camera":
+                continue
+            label = str(det.label)
+            context = self._point_context_from_label(label, det.score)
+            if context is not None and det.score > best_score:
+                best_point = context
+                best_score = det.score
+        return best_point
+
+    def _point_context_from_label(self, label: str, score: float) -> Optional[PointContext]:
+        if label.startswith("letter_"):
+            point_id = label.split("letter_", 1)[1]
+            if point_id in LETTER_POINTS:
+                return PointContext(point_id, "patrol", label, score)
+            return None
+        if label.startswith("number_"):
+            point_id = label.split("number_", 1)[1]
+            if point_id in PICKUP_NUMBERS:
+                return PointContext(point_id, "pickup", label, score)
+            if point_id in DELIVERY_NUMBERS:
+                return PointContext(point_id, "delivery", label, score)
+        return None
+
+    def _start_point_context(self, point: PointContext) -> None:
+        self._current_point = point
+        self._last_patrol_point = point.point_id
+        self._point_state = POINT_WAITING_ARRIVAL_STOP
+        self._last_box_order_state = None
+        self._last_hazard_labels = set()
+
+    def _finish_current_point(self) -> None:
+        if self._current_point is not None:
+            self._completed_point_keys.add(self._current_point.key)
+        self._current_point = None
+        self._point_state = POINT_IDLE
+
+    def _extract_patrol_point(self, detections: list[Detection]) -> Optional[str]:
+        point = self._extract_point_context(detections)
+        if point is None or point.point_type != "patrol":
+            return None
+        return point.point_id
+
+    def _log_box_order_result(self, result: BoxOrderResult) -> None:
+        if result.box_count <= 0:
+            self._last_box_order_state = None
+            return
+        state = (result.box_count, result.is_tidy)
+        if state == self._last_box_order_state:
+            return
+        status = "正常" if result.is_tidy else "异常"
+        message = f"检测到{result.box_count}个箱子 箱子摆放状态：{status}"
+        self._log_box_order_message(message, warn=not result.is_tidy, force=True)
+        self._last_box_order_state = state
+        if result.is_tidy:
+            pass
+        else:
+            pass
+
+    def _publish_inspection_event(self, level: str, status: str, event_type: str, event_code: str, message: str) -> bool:
+        event = {
+            "robot_id": self.robot_id,
+            "level": level,
+            "status": status,
+            "event_type": event_type,
+            "event_code": event_code,
+            "message": message,
+            "timestamp": datetime.now().isoformat(),
+        }
+        return self._publish_event_dict(event)
+
+    def _publish_event_dict(self, event: dict) -> bool:
+        if self.inspection_event_callback is None:
+            return False
+        self.inspection_event_callback(json.dumps(event, ensure_ascii=False))
+        return True
+
+    def _log_box_order_message(self, message: str, warn: bool = False, force: bool = False) -> bool:
+        now = time.monotonic()
+        interval = max(float(self.box_order_config.log_interval_sec), 0.0)
+        last_time_attr = "_last_box_order_warn_time" if warn else "_last_box_order_info_time"
+        last_time = getattr(self, last_time_attr, 0.0)
+        if not force and interval > 0.0 and now - last_time < interval:
+            return False
+        if warn:
+            if self.box_order_warn_callback is None:
+                return False
+            self.box_order_warn_callback(message)
+        else:
+            if self.box_order_log_callback is None:
+                return False
+            self.box_order_log_callback(message)
+        setattr(self, last_time_attr, now)
+        return True
+
+    def close(self) -> None:
+        with self._lock:
+            if self._cap is not None:
+                self._cap.release()
+                self._cap = None
+
+
+class ReusableThreadingHTTPServer(ThreadingHTTPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+
+class UsbCameraRequestHandler(BaseHTTPRequestHandler):
+    camera: SharedUsbCamera = None
+    frame_delay: float = 0.1
+
+    def log_message(self, fmt, *args):
+        return
+
+    def do_GET(self):
+        if self.path in ("/", "/index.html"):
+            self._send_index()
+        elif self.path == "/stream.mjpg":
+            self._send_stream()
+        elif self.path == "/snapshot.jpg":
+            self._send_snapshot()
+        elif self.path == "/health":
+            self._send_text("ok\n")
+        else:
+            self.send_error(HTTPStatus.NOT_FOUND, "not found")
+
+    def do_POST(self):
+        if self.path != "/arrival_confirm":
+            self.send_error(HTTPStatus.NOT_FOUND, "not found")
+            return
+        content_length = int(self.headers.get("Content-Length", "0") or "0")
+        body = self.rfile.read(content_length).decode("utf-8", errors="ignore") if content_length > 0 else "{}"
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError:
+            payload = {"raw": body}
+        print(f"[yolo_web] arrival_confirm received: {payload}")
+        self._send_text("ok\n")
+
+    def _send_index(self):
+        body = build_index_html()
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_text(self, text: str):
+        body = text.encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_snapshot(self):
+        jpeg = self.camera.read_jpeg()
+        if jpeg is None:
+            self.send_error(HTTPStatus.SERVICE_UNAVAILABLE, "camera frame unavailable")
+            return
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Content-Length", str(len(jpeg)))
+        self.end_headers()
+        self.wfile.write(jpeg)
+
+    def _send_stream(self):
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Age", "0")
+        self.send_header("Cache-Control", "no-cache, private")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+        self.end_headers()
+        while True:
+            jpeg = self.camera.read_jpeg()
+            if jpeg is None:
+                time.sleep(self.frame_delay)
+                continue
+            try:
+                self.wfile.write(build_mjpeg_frame(jpeg))
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                break
+            time.sleep(self.frame_delay)
+
+
+class UsbCameraWebNode(Node):
+    def __init__(self):
+        super().__init__("yolo_web")
+        self.declare_parameter("device", "/dev/video0")
+        self.declare_parameter("host", "0.0.0.0")
+        self.declare_parameter("port", 8088)
+        self.declare_parameter("width", 640)
+        self.declare_parameter("height", 480)
+        self.declare_parameter("fps", 15)
+        self.declare_parameter("jpeg_quality", 70)
+        self.declare_parameter("enable_detection", True)
+        self.declare_parameter("model_path", DEFAULT_MODEL_PATH)
+        self.declare_parameter("label_file", DEFAULT_LABEL_FILE)
+        self.declare_parameter("fire_smoke_model_path", DEFAULT_FIRE_SMOKE_MODEL_PATH)
+        self.declare_parameter("fire_smoke_label_file", DEFAULT_FIRE_SMOKE_LABEL_FILE)
+        self.declare_parameter("score_threshold", 0.35)
+        self.declare_parameter("fire_smoke_score_threshold", 0.35)
+        self.declare_parameter("nms_threshold", 0.45)
+        self.declare_parameter("enable_box_order_check", True)
+        self.declare_parameter("box_order_config", DEFAULT_BOX_ORDER_CONFIG)
+        self.declare_parameter("robot_id", "robot_a")
+        self.declare_parameter("raw_event_interval_sec", 1.0)
+        self.declare_parameter("cmd_vel_topic", "/cmd_vel")
+        self.declare_parameter("stop_hold_sec", 1.0)
+        self.declare_parameter("stop_epsilon", 1e-3)
+
+        device = self.get_parameter("device").value
+        host = self.get_parameter("host").value
+        port = int(self.get_parameter("port").value)
+        width = int(self.get_parameter("width").value)
+        height = int(self.get_parameter("height").value)
+        fps = int(self.get_parameter("fps").value)
+        jpeg_quality = int(self.get_parameter("jpeg_quality").value)
+        enable_detection = parameter_as_bool(self.get_parameter("enable_detection").value)
+        model_path = self.get_parameter("model_path").value
+        label_file = self.get_parameter("label_file").value
+        fire_smoke_model_path = self.get_parameter("fire_smoke_model_path").value
+        fire_smoke_label_file = self.get_parameter("fire_smoke_label_file").value
+        score_threshold = float(self.get_parameter("score_threshold").value)
+        fire_smoke_score_threshold = float(self.get_parameter("fire_smoke_score_threshold").value)
+        nms_threshold = float(self.get_parameter("nms_threshold").value)
+        enable_box_order_check = parameter_as_bool(self.get_parameter("enable_box_order_check").value)
+        box_order_config_path = self.get_parameter("box_order_config").value
+        robot_id = str(self.get_parameter("robot_id").value)
+        raw_event_interval_sec = float(self.get_parameter("raw_event_interval_sec").value)
+        cmd_vel_topic = str(self.get_parameter("cmd_vel_topic").value)
+        stop_hold_sec = float(self.get_parameter("stop_hold_sec").value)
+        stop_epsilon = float(self.get_parameter("stop_epsilon").value)
+
+        self.inspection_event_pub = self.create_publisher(String, "/inspection/event", 10)
+        self.detectors: list[YoloV8Detector] = []
+        if enable_detection:
+            box_detector = YoloV8Detector(model_path, label_file, score_threshold, nms_threshold, "box_camera")
+            self.detectors.append(box_detector)
+            self.get_logger().info(f"YOLOv8 detector loaded: name=box_camera model={model_path} classes={len(box_detector.labels)}")
+            fire_detector = YoloV8Detector(fire_smoke_model_path, fire_smoke_label_file, fire_smoke_score_threshold, nms_threshold, "fire_smoke")
+            self.detectors.append(fire_detector)
+            self.get_logger().info(f"YOLOv8 detector loaded: name=fire_smoke model={fire_smoke_model_path} classes={len(fire_detector.labels)}")
+
+        box_order_config = load_box_order_config(str(box_order_config_path))
+        effective_box_order_check = enable_detection and enable_box_order_check
+        if enable_box_order_check and not enable_detection:
+            self.get_logger().warn("箱子摆放异常判断依赖 YOLO 检测，当前 enable_detection=false，已自动关闭")
+        if effective_box_order_check:
+            self.get_logger().info(f"箱子摆放异常判断已启用：config={box_order_config_path}")
+
+        self.camera = SharedUsbCamera(
+            device,
+            width,
+            height,
+            fps,
+            jpeg_quality,
+            self.detectors,
+            enable_box_order_check=effective_box_order_check,
+            box_order_config=box_order_config,
+            box_order_log_callback=self.get_logger().info,
+            box_order_warn_callback=self.get_logger().warn,
+            inspection_event_callback=self._publish_inspection_event,
+            robot_id=robot_id,
+            raw_event_interval_sec=raw_event_interval_sec,
+            stop_hold_sec=stop_hold_sec,
+            stop_epsilon=stop_epsilon,
+        )
+        self.camera.open()
+        self.cmd_vel_sub = self.create_subscription(Twist, cmd_vel_topic, self._cmd_vel_callback, 10)
+        handler = type("ConfiguredUsbCameraRequestHandler", (UsbCameraRequestHandler,), {"camera": self.camera, "frame_delay": 1.0 / max(fps, 1)})
+        self.server = ReusableThreadingHTTPServer((host, port), handler)
+        self.server_thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.server_thread.start()
+        self.get_logger().info(f"YOLO web display started: http://{host}:{port} device={device} size={width}x{height} fps={fps} detection={enable_detection} cmd_vel_topic={cmd_vel_topic} stop_hold_sec={stop_hold_sec}")
+
+    def _cmd_vel_callback(self, msg: Twist) -> None:
+        self.camera.update_motion_state(msg)
+
+    def _publish_inspection_event(self, event_json: str) -> None:
+        msg = String()
+        msg.data = event_json
+        self.inspection_event_pub.publish(msg)
+
+    def destroy_node(self):
+        if hasattr(self, "server"):
+            self.server.shutdown()
+            self.server.server_close()
+        if hasattr(self, "camera"):
+            self.camera.close()
+        super().destroy_node()
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = UsbCameraWebNode()
+    try:
+        rclpy.spin(node)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
+    finally:
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()

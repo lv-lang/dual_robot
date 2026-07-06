@@ -1,0 +1,21 @@
+/robot1/bpu_vision_detector:
+  ros__parameters:
+    image_topic: "/robot1/camera/color/image_raw"
+    detections_topic: "/robot1/vision/detections"
+    debug_image_topic: "/robot1/vision/debug_image"
+    publish_debug_image: true
+
+    backend: "placeholder"
+    model_path: ""
+    priority: 0
+    bpu_cores: [0]
+
+    input_width: 640
+    input_height: 640
+    input_format: "packed_nv12"
+    resize_mode: "letterbox"
+
+    score_threshold: 0.25
+    nms_threshold: 0.45
+    max_detections: 100
+    class_names: ["target"]

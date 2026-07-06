@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="双车任务台">
+  <rect width="512" height="512" fill="#183a37"/>
+  <circle cx="256" cy="256" r="214" fill="#f5f7f4"/>
+  <path d="M112 332c0-80 64-144 144-144s144 64 144 144v40c0 22-18 40-40 40H152c-22 0-40-18-40-40v-40Z" fill="#2f6f73"/>
+  <circle cx="210" cy="316" r="28" fill="#f5f7f4"/>
+  <circle cx="302" cy="316" r="28" fill="#f5f7f4"/>
+  <path d="M256 188v-72" stroke="#183a37" stroke-width="28" stroke-linecap="round"/>
+  <circle cx="256" cy="92" r="25" fill="#d89f35"/>
+</svg>

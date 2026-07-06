@@ -1,0 +1,16 @@
+frame_id: /map
+position_tolerance_m: 0.35
+yaw_tolerance_rad: 1.0
+
+points:
+  W1: {x: -8.5, y: -3.8, yaw: 0.0}
+  A: {x: -7.5, y: -3.8, yaw: 0.0}
+  C: {x: -9.0, y: -3.8, yaw: 0.0}
+  W2: {x: -8.5, y: 2.5, yaw: 0.0}
+  P1: {x: -7.5, y: 2.5, yaw: 0.0}
+  P2: {x: -8.0, y: 2.5, yaw: 0.0}
+  P3: {x: -9.0, y: 2.5, yaw: 0.0}
+
+routes:
+  robot1: [W1, A, C, W1]
+  robot2: [W2, P1, P2, P3, W2]

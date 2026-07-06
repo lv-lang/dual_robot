@@ -1,0 +1,66 @@
+/robot1/robot1_dwa_lite_planner:
+  ros__parameters:
+    global_path_topic: /robot1/global_path
+    odom_topic: /robot1/odom
+    scan_topic: /robot1/scan
+    cmd_vel_topic: /robot1/cmd_vel
+    local_path_topic: /robot1/local_path
+    planner_state_topic: /robot1/planner_state
+
+    control_frequency: 15.0
+    path_timeout: 0.0
+    odom_timeout: 0.5
+    scan_timeout: 0.5
+    lookahead_distance: 0.55
+    heading_lookahead: 0.55
+    xy_goal_tolerance: 0.12
+    goal_tolerance: 0.12
+    rejoin_path_distance: 0.10
+    velocity_feedback_mode: last_command
+
+    robot_length: 0.24
+    robot_width: 0.20
+    safety_margin: 0.06
+
+    min_vx: 0.0
+    max_vx: 0.36
+    min_vy: -0.30
+    max_vy: 0.22
+    min_wz: -0.90
+    max_wz: 0.42
+
+    acc_lim_x: 0.60
+    acc_lim_y: 0.60
+    acc_lim_theta: 0.70
+    jerk_lim_x: 2.50
+    jerk_lim_y: 2.50
+    jerk_lim_theta: 1.80
+    cmd_filter_alpha: 0.75
+    vx_deadband: 0.01
+    vy_deadband: 0.01
+    wz_deadband: 0.02
+
+    vx_samples: 5
+    vy_samples: 5
+    wz_samples: 5
+    sim_time: 1.2
+    dt: 0.1
+    use_dynamic_window: true
+    target_speed: 0.26
+
+    obstacle_min_dist: 0.14
+    hard_stop_distance: 0.18
+    front_check_distance: 0.75
+    front_check_width: 0.34
+    front_check_angle: 0.70
+    side_check_distance: 0.75
+    obstacle_range: 2.5
+    max_obstacle_points: 80
+
+    path_weight: 5.00
+    goal_weight: 0.90
+    obstacle_weight: 4.0
+    heading_weight: 0.80
+    velocity_weight: 0.80
+    smoothness_weight: 0.95
+    lateral_weight: 1.20

@@ -1,0 +1,30 @@
+# Long-running mission execution. Cancellation is handled by the ROS2 action protocol.
+
+MissionCommand command
+---
+uint8 STATUS_SUCCEEDED=1
+uint8 STATUS_FAILED=2
+uint8 STATUS_CANCELED=3
+
+uint8 status
+string task_id
+uint32 final_step_index
+string final_step_id
+string final_point_id
+bool success
+string message
+---
+uint8 EXECUTION_ACCEPTED=1
+uint8 EXECUTION_NAVIGATING=2
+uint8 EXECUTION_WAITING_CONFIRMATION=3
+uint8 EXECUTION_RETURNING_HOME=4
+uint8 EXECUTION_PAUSED=5
+uint8 EXECUTION_CANCELING=6
+
+uint8 execution_state
+string task_id
+uint32 current_step_index
+string current_step_id
+string current_point_id
+geometry_msgs/PoseStamped current_goal
+string message

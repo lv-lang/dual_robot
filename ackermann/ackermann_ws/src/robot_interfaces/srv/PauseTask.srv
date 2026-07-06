@@ -1,0 +1,7 @@
+string task_id
+string requester
+string reason
+---
+bool accepted
+Task task
+string message

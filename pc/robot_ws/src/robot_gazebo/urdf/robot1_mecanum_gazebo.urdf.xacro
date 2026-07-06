@@ -1,0 +1,142 @@
+<?xml version="1.0"?>
+<robot name="robot1_mecanum_gazebo" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:include filename="$(find yahboomcar_description)/urdf/yahboomcar_X3_robot1.urdf"/>
+
+  <xacro:macro name="kinematic_link" params="link_name">
+    <gazebo reference="${link_name}">
+      <gravity>false</gravity>
+      <self_collide>false</self_collide>
+    </gazebo>
+  </xacro:macro>
+
+  <xacro:kinematic_link link_name="robot1/base_footprint"/>
+  <xacro:kinematic_link link_name="robot1/base_link"/>
+  <xacro:kinematic_link link_name="robot1/imu_link"/>
+  <xacro:kinematic_link link_name="robot1/front_right_wheel"/>
+  <xacro:kinematic_link link_name="robot1/front_left_wheel"/>
+  <xacro:kinematic_link link_name="robot1/back_right_wheel"/>
+  <xacro:kinematic_link link_name="robot1/back_left_wheel"/>
+
+  <gazebo>
+    <plugin name="robot1_planar_move" filename="libgazebo_ros_planar_move.so">
+      <ros>
+        <namespace>/robot1</namespace>
+        <remapping>cmd_vel:=cmd_vel</remapping>
+        <remapping>odom:=odom</remapping>
+        <remapping>/tf:=tf</remapping>
+        <remapping>/tf_static:=tf_static</remapping>
+      </ros>
+      <update_rate>100</update_rate>
+      <publish_rate>30</publish_rate>
+      <publish_odom>true</publish_odom>
+      <publish_odom_tf>true</publish_odom_tf>
+      <odometry_frame>robot1/odom</odometry_frame>
+      <robot_base_frame>robot1/base_footprint</robot_base_frame>
+      <covariance_x>0.0001</covariance_x>
+      <covariance_y>0.0001</covariance_y>
+      <covariance_yaw>0.01</covariance_yaw>
+    </plugin>
+  </gazebo>
+
+  <gazebo reference="robot1/laser_link">
+    <gravity>false</gravity>
+    <self_collide>false</self_collide>
+    <sensor name="robot1_laser" type="ray">
+      <always_on>true</always_on>
+      <visualize>false</visualize>
+      <update_rate>10</update_rate>
+      <pose>0 0 0 0 0 0</pose>
+      <ray>
+        <scan>
+          <horizontal>
+            <samples>360</samples>
+            <resolution>1.0</resolution>
+            <min_angle>-3.14159</min_angle>
+            <max_angle>3.14159</max_angle>
+          </horizontal>
+        </scan>
+        <range>
+          <min>0.12</min>
+          <max>8.0</max>
+          <resolution>0.01</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.01</stddev>
+        </noise>
+      </ray>
+      <plugin name="robot1_laser_plugin" filename="libgazebo_ros_ray_sensor.so">
+        <ros>
+          <namespace>/robot1</namespace>
+          <remapping>~/out:=scan_raw</remapping>
+        </ros>
+        <output_type>sensor_msgs/LaserScan</output_type>
+        <frame_name>robot1/laser_link</frame_name>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <gazebo reference="robot1/camera_link">
+    <gravity>false</gravity>
+    <self_collide>false</self_collide>
+    <sensor name="robot1_color_camera" type="camera">
+      <always_on>true</always_on>
+      <visualize>true</visualize>
+      <update_rate>15</update_rate>
+      <pose>0 0 0 0 0 0</pose>
+      <camera>
+        <horizontal_fov>1.047</horizontal_fov>
+        <image>
+          <width>640</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>0.05</near>
+          <far>20.0</far>
+        </clip>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.007</stddev>
+        </noise>
+      </camera>
+      <plugin name="robot1_color_camera_plugin" filename="libgazebo_ros_camera.so">
+        <ros>
+          <namespace>/robot1/camera</namespace>
+        </ros>
+        <camera_name>color</camera_name>
+        <frame_name>robot1/camera_link</frame_name>
+      </plugin>
+    </sensor>
+
+    <sensor name="robot1_depth_camera" type="depth">
+      <always_on>true</always_on>
+      <visualize>false</visualize>
+      <update_rate>15</update_rate>
+      <pose>0 0 0 0 0 0</pose>
+      <camera>
+        <horizontal_fov>1.047</horizontal_fov>
+        <image>
+          <width>640</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>0.1</near>
+          <far>8.0</far>
+        </clip>
+      </camera>
+      <plugin name="robot1_depth_camera_plugin" filename="libgazebo_ros_camera.so">
+        <ros>
+          <namespace>/robot1/camera</namespace>
+        </ros>
+        <camera_name>depth</camera_name>
+        <frame_name>robot1/camera_link</frame_name>
+        <min_depth>0.1</min_depth>
+        <max_depth>8.0</max_depth>
+      </plugin>
+    </sensor>
+  </gazebo>
+</robot>
